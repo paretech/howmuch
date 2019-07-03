@@ -1,0 +1,43 @@
+# howmuch
+
+Quickly get product properties from your E-commerce website.
+
+## Installation
+
+```sh
+> pip install -e https://github.com/paretech/howmuch
+```
+
+## Usage example
+
+```sh
+> howmuch "men|clearance" -d <url_of_your_site>
+```
+
+OR
+
+```sh
+> set HOWMUCH_DOMAIN=<url_of_your_site>
+> howmuch "men|clearance"
+```
+
+## Release History
+
+* 0.0.0
+    * Barely useful... List some links...
+
+## Meta
+
+[@paretech](https://twitter.com/paretech)
+
+<https://github.com/paretech/>
+
+## Contributing
+
+1. Fork it (<https://github.com/paretech/howmuch>)
+2. Create your feature branch (`git checkout -b feature/fooBar`)
+3. Commit your changes (`git commit -am 'Add some fooBar'`)
+4. Push to the branch (`git push origin feature/fooBar`)
+5. Create a new Pull Request
+
+<!-- Markdown link & img dfn's -->
