@@ -28,7 +28,8 @@ setuptools.setup(
     install_requires=[
         'requests',
         'beautifulsoup4',
-        'lxml'
+        'lxml',
+        'progressbar2',
     ],
     entry_points={
         'console_scripts': [

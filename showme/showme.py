@@ -1,10 +1,14 @@
 import argparse
 import collections
+import csv
 import logging
 import os
+import pathlib
+import sys
 
-import requests
 import bs4
+import progressbar
+import requests
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.NullHandler())
@@ -15,8 +19,10 @@ def _command_line_parser():
     parser = argparse.ArgumentParser(description="Quickly get product properties")
     parser.add_argument('categories', type=str, nargs='*',
                         help='the category to query (e.g. "men|clearance")')
-    parser.add_argument('-d', '--domain', help='Domain with CATEGORY (default: SHOWME_DOMAIN)',
+    parser.add_argument('-d', '--domain', help='Domain of website',
                         default=os.getenv('SHOWME_DOMAIN'), type=str)
+    parser.add_argument('-o', '--outfile', type=str, nargs='?', default=None,
+                        help='CSV output file')
     parser.add_argument('-v', '--verbose', action='count', dest='level', default=0,
                         help='Verbose logging (repeat for more verbose)')
     parser.add_argument('-q', '--quiet', action='store_const', const=0, dest='level', default=1,
@@ -29,6 +35,8 @@ def _command_line():
     parser = _command_line_parser()
     args = parser.parse_args()
 
+    if args.outfile:
+        progressbar.streams.wrap_stderr()
     log_levels = [logging.ERROR, logging.WARN, logging.INFO, logging.DEBUG]
     logging.basicConfig(level=log_levels[min(args.level, len(log_levels) - 1)])
 
@@ -47,20 +55,24 @@ def _command_line():
 
     styles_links = get_style_links(styles)
 
-    for index, link in enumerate(styles_links):
-        print(f'{index+1}: {link}')
-        pdp_req = requests.get(absolute_url(args.domain, link))
-        pdp_content = bs4.BeautifulSoup(pdp_req.content, 'lxml')
+    for link in progressbar.progressbar(styles_links, redirect_stdout=True):
+        try:
+            pdp_req = requests.get(absolute_url(args.domain, link))
+            pdp_content = bs4.BeautifulSoup(pdp_req.content, 'lxml')
 
-        swatch_data = pdp_swatch_sets(pdp_content, pdp_req.url)
+            swatch_data = pdp_swatch_sets(pdp_content, pdp_req.url)
 
-        if not swatch_data:
-            swatch_data = pdp_single(pdp_content, pdp_req.url)
+            if not swatch_data:
+                swatch_data = (pdp_single(pdp_content, pdp_req.url), )
 
-        if not swatch_data:
-            LOGGER.warning(f'No results found, {pdp_req.url}')
+            if not swatch_data:
+                LOGGER.warning(f'No results found, {pdp_req.url}')
 
-        pdp_write_styles(swatch_data)
+            pdp_write_styles(swatch_data, args.outfile)
+
+        except Exception as err:
+            LOGGER.error(f'{pdp_req.url}')
+            raise
 
 
 def get_styles(domain, category):
@@ -105,8 +117,14 @@ def pdp_single(soup, address, *args):
     return (style_code, title, swatch_name, price, address, *args)
 
 
-def pdp_write_styles(swatch_data):
-    print(swatch_data)
+def pdp_write_styles(swatch_data, file):
+    if file:
+        with open(file, 'a', newline='') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator=os.linesep)
+            csvwriter.writerows(swatch_data)
+    else:
+        csv.writer(sys.stdout, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator=os.linesep)
+
 
 def get_style_links(items, key='pListItem'):
     """Given an iterable of mapping type, return links by key."""
@@ -145,3 +163,9 @@ def save_page(address):
     file_name = address.split('/')[-1] + '.html'
     with open(file_name, 'w') as f:
         f.write(str(req.content))
+
+
+def touch_file(file):
+    pathlib.Path(file).touch()
+    if not os.access(file, os.W_OK):
+        LOGGER.error(f'File not writable, {file}')

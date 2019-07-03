@@ -14,7 +14,7 @@ pip install git+https://github.com/paretech/showme
 
 ```sh
 venv\scripts\activate
-howmuch "men|clearance" -d <url_of_your_site>
+showme "<category_string>" -d <url_of_your_site>
 ```
 
 ## Release History
@@ -30,7 +30,7 @@ howmuch "men|clearance" -d <url_of_your_site>
 
 ## Contributing
 
-1. Fork it (<https://github.com/paretech/howmuch>)
+1. Fork it (<https://github.com/paretech/showme>)
 2. Create your feature branch (`git checkout -b feature/fooBar`)
 3. Commit your changes (`git commit -am 'Add some fooBar'`)
 4. Push to the branch (`git push origin feature/fooBar`)
