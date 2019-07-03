@@ -19,9 +19,9 @@ def _command_line_parser():
     parser = argparse.ArgumentParser(description="Quickly get product properties")
     parser.add_argument('categories', type=str, nargs='*',
                         help='the category to query (e.g. "men|clearance")')
-    parser.add_argument('-d', '--domain', help='Domain of website',
+    parser.add_argument('-d', '--domain', help='Domain of website', required=True,
                         default=os.getenv('SHOWME_DOMAIN'), type=str)
-    parser.add_argument('-o', '--outfile', type=str, nargs='?', default=None,
+    parser.add_argument('-o', '--outfile', type=str, nargs='?', default=None, required=True,
                         help='CSV output file')
     parser.add_argument('-v', '--verbose', action='count', dest='level', default=0,
                         help='Verbose logging (repeat for more verbose)')
@@ -35,9 +35,8 @@ def _command_line():
     parser = _command_line_parser()
     args = parser.parse_args()
 
-    if args.outfile:
-        progressbar.streams.wrap_stderr()
     log_levels = [logging.ERROR, logging.WARN, logging.INFO, logging.DEBUG]
+    progressbar.streams.wrap_stderr()
     logging.basicConfig(level=log_levels[min(args.level, len(log_levels) - 1)])
 
     if not args.categories:
@@ -48,6 +47,9 @@ def _command_line():
         print('No domain specified.')
         print('Use --help for command line help')
         return
+
+    outfile = open(args.outfile, 'w', newline='')
+    csvwriter = csv.writer(outfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator=os.linesep)
 
     styles = list()
     for category in args.categories:
@@ -68,11 +70,13 @@ def _command_line():
             if not swatch_data:
                 LOGGER.warning(f'No results found, {pdp_req.url}')
 
-            pdp_write_styles(swatch_data, args.outfile)
+            csvwriter.writerows(swatch_data)
 
         except Exception as err:
             LOGGER.error(f'{pdp_req.url}')
             raise
+
+    outfile.close()
 
 
 def get_styles(domain, category):
@@ -115,15 +119,6 @@ def pdp_single(soup, address, *args):
     price = soup.find(class_='pdp-price').text.split()[0]
 
     return (style_code, title, swatch_name, price, address, *args)
-
-
-def pdp_write_styles(swatch_data, file):
-    if file:
-        with open(file, 'a', newline='') as csvfile:
-            csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator=os.linesep)
-            csvwriter.writerows(swatch_data)
-    else:
-        csv.writer(sys.stdout, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator=os.linesep)
 
 
 def get_style_links(items, key='pListItem'):
