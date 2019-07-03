@@ -1,24 +1,20 @@
-# howmuch
+# showme
 
 Quickly get product properties from your E-commerce website.
 
 ## Installation
 
 ```sh
-> pip install -e https://github.com/paretech/howmuch
+python -m venv venv
+venv\scripts\activate
+pip install git+https://github.com/paretech/showme
 ```
 
 ## Usage example
 
 ```sh
-> howmuch "men|clearance" -d <url_of_your_site>
-```
-
-OR
-
-```sh
-> set HOWMUCH_DOMAIN=<url_of_your_site>
-> howmuch "men|clearance"
+venv\scripts\activate
+howmuch "men|clearance" -d <url_of_your_site>
 ```
 
 ## Release History
