@@ -30,6 +30,7 @@ setuptools.setup(
         'beautifulsoup4',
         'lxml',
         'progressbar2',
+        'aiohttp',
     ],
     entry_points={
         'console_scripts': [
