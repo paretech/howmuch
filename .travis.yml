@@ -1,29 +1,34 @@
 # https://docs.travis-ci.com/user/reference/windows
 # https://travis-ci.community/t/current-known-issues-please-read-this-before-posting-a-new-topic/264/10
 # https://docs.travis-ci.com/user/best-practices-security
+# https://ruszkow.ski/posts/2019-10-21-travis-+-pyinstaller-+-github-releases/
 os: windows
-language: shell
+language: bash
 before_install:
+  # https://docs.travis-ci.com/user/languages/python/
+  # https://blog.travis-ci.com/2019-08-07-extensive-python-testing-on-travis-ci
+  # Windows doesn't support python out of the box
   - choco install python --version=3.8
   - python -m pip install --upgrade pip
 # Could not get gitbash to update env variables. Hard coding python path
 env: PATH=/c/Python38:/c/Python38/Scripts:$PATH
 install:
   - pip install -r requirements.txt
-  # - pip install lxml
-  # - pip freeze
 script:
-  - bash -c echo "Hello World"
   - pyinstaller "showme.spec"
   
-before_deploy:
-  - pyinstaller "showme.spec"
+  # before_deploy:
+    #   - pyinstaller "showme.spec"
 deploy:
+  # https://docs.travis-ci.com/user/deployment/releases/
   provider: releases
   api_key: $RELEASE_TOKEN
   file_glob: true
   file: dist/*.exe
+  skip_cleanup: true
   draft: true
   on:
     tags: true
-  name: $TRAVIS_TAG (DRAFT)
+  # https://packaging.python.org/guides/single-sourcing-package-version/
+  # https://github.com/ncoghlan/python-packaging-user-guide/blob/master/source/guides/single-sourcing-package-version.rst
+  name: $TRAVIS_TAG
