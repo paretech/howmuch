@@ -22,13 +22,16 @@ script:
 deploy:
   # https://docs.travis-ci.com/user/deployment/releases/
   provider: releases
-  api_key: $RELEASE_TOKEN
+  api_key:
+    secure: MDXGoRSjEEAWEaHKbQbvzTy4DsPekcN1yrUvq93XKA/ixpp8YLXskzclCZPoUt88AIFuoEky5ozwGLMl9N6m6gjsCWcwXpaGC+Y7uFbUpR2B0IemQ2lE811IQBhQtaHF4r4q3auTfpsApnUexRS43UDa5hVRIByS9tnhOIBoZJC0Rbt2qjxYcxhiK8WBC5obkDxto2NLYQYFocQFGUjZhR+RjjeG5RRGOskg3kbKZyZ4TlJUw0wqX2lAjTHx0uqWdssiqWK0gPZNWcku6JzdRfNYLwOZazqbbDQ9qzA+PWpBbZViJ/wGHlmqJdS/r6Vz5OxI1AohvdkrUpHYyrkirLF/bolM3A7YsxcmDPDdF8ZHtMFsVhLvOzua/8+laAO7yEI2ijYgvGcRNICFF1hZ1ELcHH8ptuReV4nOKCoLtfmT83qKTCbsDK9Clev793bs6wvQ6M80WoogAd3O3OTic9UOD7kY09P4hUbq1nqOo2xEjRDnRmhtAe3ERkmeIgZFybZvndgvk2kzf8jDrP0zbMKaZP8bzSj/I5AtOVBDOoAw4Ue63670gL/GIYTFQE+frAAhaRiDR7gV2kMpZ9OfCEDyY4JaAZlLOAEmDckz9d5d1e7Bi86G5xnmyYxthbT4fWpHucVcMvEjCTKbNspQzdaZ+/Fq4HnXYmsenOJu7RY=
   file_glob: true
   file: dist/*.exe
-  skip_cleanup: true
-  draft: true
+  skip_cleanup: 'true'
   on:
     tags: true
+    repo: paretech/showme
+    # branch: ci_build
   # https://packaging.python.org/guides/single-sourcing-package-version/
   # https://github.com/ncoghlan/python-packaging-user-guide/blob/master/source/guides/single-sourcing-package-version.rst
   name: $TRAVIS_TAG
+      
