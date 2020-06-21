@@ -1,170 +1,278 @@
-"""A simple web crawler -- class implementing crawling logic."""
-
+import argparse
 import asyncio
-from collections import namedtuple
-import datetime
 import logging
+import pathlib
+import os
+import sys
 import time
-import concurrent.futures
-
-import aiohttp  # Install with "pip install aiohttp".
-
-import showme.scraping
-
-# @TODO: Remove debug imports
+import random
 from pprint import pprint
+import aiohttp
+import urllib.parse
+import showme.scraping
+from collections import namedtuple
+import csv
+import datetime
+from asyncio_throttle import Throttler
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.addHandler(logging.NullHandler())
 
-FetchStatistic = namedtuple('FetchStatistic',
-                            ['url',
-                             'next_url',
-                             'status',
-                             'exception',
-                             'size',
-                             'content_type',
-                             'encoding',
-                             'num_urls',
-                             'num_new_urls'])
+def config_logging(level):
+    logging.basicConfig(
+        format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
+        level=level,
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
 
+async def worker(q):
+    while True:
+        LOGGER.info("Worker Waiting")
+        time_start = time.time()
+        value = await q.get()
+        delay = random.randint(3, 4)
+        await asyncio.sleep(delay)
+        q.task_done()
+        elapsed_time = time.time() - time_start
+        if elapsed_time > 4: 
+            raise ValueError('Worker took too long')
+        LOGGER.info(f'Worker got {value} after {elapsed_time:.3} seconds, {q.qsize()} waiting.')
+
+class Job:
+    def __init__(self, url, callback=None, json=False):
+        self._url = urllib.parse.urlparse(url)
+        self.callback = callback
+        self.content = None
+        self._json = json
+        self.payload = dict()
+
+    @property
+    def url(self):
+        # return self._url.geturl()
+        # return urllib.parse.quote(self._url.geturl(), safe='/:*?=')
+        return self._url.geturl()
+
+    async def go(self):
+        await self.callback(self)
 
 class Crawler:
-    """Crawl a set of URLs.
-    This manages two sets of URLs: 'urls' and 'done'.  'urls' is a set of
-    URLs seen, and 'done' is a list of FetchStatistics.
-    """
-    def __init__(self, roots, domain, outfile, max_workers=20, max_tries=1, *, loop=None):
-        self.t0 = time.time()
-        self.t1 = None
-        self.roots = roots
-        self.domain = str(domain)
-        self.outfile = str(datetime.datetime.fromtimestamp(self.t0).strftime("%Y-%m-%d_%H%M%S")) + '.csv'
-        self.protocol = 'https'
-        self.max_workers = max_workers
-        self.q = asyncio.Queue()
-        self.seen_products = set()
-        self.done = []
-        self.loop = loop or asyncio.get_event_loop()
-        self.executor = None
-        self.connector = None
-        self.session = None
-        self.tasks = list()
-        self.root_domains = set()
-        self.product_details = list()
+    def __init__(self, urls, outfile):  
+        self.urls = urls 
+        self.max_workers = 2
+        self.request_queue_depth = 20
+        self.request_queue = None
+        self.seen_urls = set()
+        self.seen_styles = set()
 
-    def make_absolute_url(self, url):
-        if '://' in url:
-            return url
-        else:
-            return f'{self.protocol}://{self.domain}{str(url)}'
+        self.session = None
+        self.worker_tasks = None
+
+        self.throttler = None
+        # timestamp = str(datetime.datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d_%H%M%S"))
+        self.filename = str(outfile)
+        self.csvfieldnames = ['name',  'color_name', 'productSKUCode', 'style', 'color', 'upc', 'price', 'list_price', 'sale_price', 'availability', 'desc', 'url']
+        self.csvwriter = CSVScribe(self.filename, self.csvfieldnames)
+        self.write_counter = 0
+
+        self.product_total = 0
+        self.product_remaining = 0
+        self.percent_complete = 0.0
 
     async def close(self):
-        """Close web client session"""
-
-        # https://aiohttp.readthedocs.io/en/stable/client_quickstart.html
-        # asyncio.gather(*asyncio.all_tasks()).cancel()
-        # heartbeat.cancel()
         await self.session.close()
-
-    async def heartbeat(self, msg=None):
-        # Ensure something running on loop https://bugs.python.org/issue23057
-        while True:
-            LOGGER.info('heartbeat...')
-            await asyncio.sleep(1)
-
-    def record_statistic(self, fetch_statistic):
-        """Record statistics for completed and failed web requests"""
-        self.done.append(fetch_statistic)
-
-    async def process_category(self, category_code, current_page=0):
-        """Extract product details for products with category code"""
-        LOGGER.info(f'Processing {category_code} page {current_page}')
-        category_page = await self.get_category_page(category_code, current_page)
-
-        pages = list()
-        if current_page is 0:
-            total_pages = int(category_page['pagination']['numberOfPages'])
-            LOGGER.info(f'{category_code} has {total_pages} pages')
-            pages.extend(asyncio.create_task(self.process_category(category_code, page)) for page in range(1, total_pages))
-
-        products = asyncio.create_task(self.process_products(category_page))
-        return await asyncio.gather(*(products, *pages))
-
-    async def get_category_page(self, category_code, current_page=0):
-        """Get category page, request more pages, request product pages"""
-        LOGGER.info(f'Getting  {category_code} page {current_page}')
-
-        category_url = f'{self.protocol}://{self.domain}/**/c/{str(category_code)}/getCategoryPageData?'
-        url_parameters = {'page': current_page, 'q': ':relevance'}
-
-        async with self.session.get(category_url, params=url_parameters) as response:
-            return await response.json()
-
-    async def process_products(self, category_page):
-        """Create tasks to request and process product pages given a category page"""
-        current_page = category_page['pagination']['currentPage']
-        category_code = category_page['categoryCode']
-
-        new_product_urls, seen_product_urls = await self.get_product_urls(category_page)
-
-        LOGGER.info(f'{category_code} page {current_page}, found {len(new_product_urls)} product links')
-        LOGGER.info(f'{category_code} page {current_page}, ignoring {len(seen_product_urls)} product links')
-
-        # @TODO: Request all these products please!
-        tasks = (asyncio.create_task(self.process_product(product_url)) for product_url in new_product_urls)
-
-        self.seen_products.update(new_product_urls)
-        return await asyncio.gather(*tasks)
-
-    async def get_product_urls(self, category_page):
-        """Extract product URLs from getCategoryPageData results"""
-        product_urls = await self.loop.run_in_executor(self.executor, showme.scraping.get_style_links, category_page['products'])
-        product_urls = set(map(self.make_absolute_url, product_urls))
-        return product_urls.difference(self.seen_products), product_urls.intersection(self.seen_products)
-
-    async def process_product(self, product_url):
-        """Process product detail page given an absolute product URL"""
-        product_page = await self.get_product_page(product_url)
-        LOGGER.info(f'Completed request for {product_url}')
-        product_details = await self.get_product_details(product_page, product_url)
-        self.product_details.extend(product_details)
-        return product_details
-
-    async def get_product_page(self, product_url):
-        LOGGER.info(f'Getting {product_url}')
-        async with self.session.get(product_url) as response:
-            return await response.text()
-
-    async def get_product_details(self, product_page, product_url):
-        # @TODO: Throw blocking tasks (like beautiful soup) to pool executor.
-        #   Extract product details given the requested product_page. The code segment below
-        #   is from scrpaing.py from a previous (blocking) version of showme.
-
-        product_details = await self.loop.run_in_executor(self.executor, showme.scraping.get_product_details, product_page, product_url)
-
-        return product_details
-
+        
     async def crawl(self):
-        """Run the crawler until queues finished"""
+        """Run the crawler until all work is done.
+        
+        This is the main execution coroutine for the crawler.
+        """
+        # Queues must be created inside event loop (i.e. don't place in __init__)
+        self.request_queue = asyncio.Queue()
 
-        self.connector = aiohttp.TCPConnector(limit=10)
-        self.session = aiohttp.ClientSession(connector=self.connector)
-        heartbeat = asyncio.create_task(self.heartbeat())
+        # Clientsession should be created from async function (i.e. don't place in __init__)
+        self.session = aiohttp.ClientSession()
 
-        self.executor = concurrent.futures.ThreadPoolExecutor()
+        self.throttler = Throttler(rate_limit=10, period=1)
 
+        for url in self.urls:
+            await self.schedule(Job(url, self.stage1_request_category_data))
+
+        self.worker_tasks = [asyncio.create_task(self.worker(name=i)) for i in range(self.max_workers)]
+
+        # Only needed if Windows and Python version < 3.8 
+        self.health_tasks = [asyncio.create_task(self.heartbeat()), ]
+
+        # When all work is done, exit.
+        await self.request_queue.join()
+        for worker in self.worker_tasks:
+            worker.cancel()
+
+        await self.close()
+
+    async def schedule(self, job):
+        if job.url not in self.seen_urls:
+            await self.request_queue.put(job)
+            LOGGER.debug(f'Added item to queue, there are {self.request_queue.qsize()} jobs pending.')
+        else:
+            self.product_remaining -= 1
+            LOGGER.warning(f'Skipping Seen URL: {job.url}')
+            LOGGER.info(f'{self.product_remaining} of {self.product_total} complete')
+
+    async def worker(self, *, name=''):
+        if name != '':
+            name = ' ' + str(name)
+            
+        LOGGER.info(f'Worker{name} started!')
+        while True:
+            LOGGER.debug(f'Worker{name} waiting...')
+            job = await self.request_queue.get()
+            LOGGER.debug(f'Got item from queue, there are {self.request_queue.qsize()} jobs remaining.')
+            try:
+                # # Download page and add new links to self.request_queue.
+                job.content = await self.fetch(job)
+                await job.go()
+            except Exception as exc:
+                LOGGER.exception(f'The coroutine raised an exception: {exc!r}')
+                # raise exc
+            finally:
+                self.request_queue.task_done()
+
+    async def heartbeat(self):
+        '''Workaround for signal issue on Python < 3.8'''
+        while True:
+            workers = len(self.worker_tasks)
+            stopped = [worker for worker in self.worker_tasks if worker.done()]
+            faulted = [worker for worker in self.worker_tasks if isinstance(worker._exception, Exception)]
+            LOGGER.debug("heartbeat")
+            if stopped or faulted:
+                LOGGER.warning(f'{len(stopped)}/{workers} workers stopped')
+                LOGGER.error(f'{len(faulted)}/{workers} workers faulted')
+                for worker in faulted:
+                    worker.cancel()
+            await asyncio.sleep(5)
+
+    async def fetch(self, job): 
+        async with self.throttler:
+            async with self.session.get(job.url) as response:
+                # assert str(response.url) == job.url
+                if job._json:
+                    return await response.json()
+
+                return await response.read()
+
+    async def stage1_request_category_data(self, job):
+        '''Given job with URL and HTML, request category_page_data'''
+        category = showme.scraping.get_page_category_code(job.content)
+        path = f'/**/c/{category}/getCategoryPageData?'
+        category_page_data_url = urllib.parse.urljoin(job.url, path)
+
+        await self.schedule(Job(category_page_data_url, self.stage2_process_category_page, json=True))
+
+    ProductURLDetails = namedtuple('URLDetails', ['none', 'language', 'title', 'type', 'code'])
+
+    async def stage2_process_category_page(self, job):
+        '''Queue remaining category and product pages
+        
+        Requires job.content to be JSON
+        '''
+        # If first page, queue remaining pages
+        current_page = int(job.content['pagination']['currentPage'])
+        
+        last_page = int(job.content['pagination']['numberOfPages'])
+        if current_page == 0:
+            # breakpoint()
+            self.product_total += int(job.content['pagination']['totalNumberOfResults'])
+            self.product_remaining += int(job.content['pagination']['totalNumberOfResults'])
+
+        if (current_page == 0) and (current_page < last_page-1):
+            params = {'page': 0, 'q': ':relevance'}
+            for page in range(current_page+1, last_page):
+                params['page'] = page
+                category_page_data_url = replace_url_params(job._url, params).geturl()
+                LOGGER.info(f'Requesting: {category_page_data_url}')
+                await self.schedule(Job(category_page_data_url, self.stage2_process_category_page, json=True))
+
+        # Parse product URLs and queue product requests
+        products = showme.scraping.get_style_links(job.content['products'])
+        product_details = [self.ProductURLDetails(*product.split('/')) for product in products]
+        for item in product_details:
+            style, color = item.code.split('-')
+            if style in self.seen_styles:
+                LOGGER.debug(f'Skipping stage 3 request for {item.code}, already requested style.')
+                continue
+            self.seen_styles.add(style)
+            path = f'/en/p/{item.code}/detailSummary/getProductFeed2.json?currency=USD'
+            product_detail_summary_url = urllib.parse.urljoin(job.url, path)
+            LOGGER.info(f'Requesting: {product_detail_summary_url}')
+            job = Job(product_detail_summary_url, self.stage3_process_product_page, json=True)
+            job.payload = item
+            await self.schedule(job)
+
+    async def stage3_process_product_page(self, job):
         try:
-            self.t0 = time.time()
-            self.tasks.extend((asyncio.create_task(self.process_category(root)) for root in self.roots))
-            await asyncio.gather(*self.tasks)
-            self.t1 = time.time()
-            LOGGER.info('Queue stopped blocking, on with the show!')
-            # print(heartbeat)
+            detail_summary = job.content
+            for index, product_summary in enumerate(detail_summary):
+                product_code = product_summary['productCode']
+
+                if index == 0:
+                    product_detail_path = f'/p/{product_code}/getProductDetail.json'
+                    product_detail_url = urllib.parse.urljoin(job.url, product_detail_path)
+                    product_detail = await self.fetch(Job(product_detail_url, json=True))
+
+                product_url = urllib.parse.urljoin(job.url, f'/en/p/{product_code}')
+
+                output = {
+                    'url': product_url,
+                    'name': product_detail.get('name'),
+                    'color_name': product_summary.get('colorName'),
+                    'price': product_summary.get('price'),
+                    'list_price': product_summary.get('listPrice'),
+                    'sale_price': product_summary.get('salePrice'),
+                    }
+                
+                try:
+                    for size in product_summary['sizes']:
+                        size['style'], size['color'], _ = size['productSKUCode'].split('-')
+                        self.csvwriter({**output, **size})
+                except KeyError:
+                    LOGGER.warning(f'No Size information: {product_url}')
+                    output['productSKUCode'] = product_summary.get('productSKUCode')
+                    output['style'], output['color'], _ = output['productSKUCode'].split('-')
+                    self.csvwriter(output)
         finally:
-            heartbeat.cancel()
-            # asyncio.gather(*asyncio.all_tasks()).cancel()
-            # asyncio.gather()
-            self.executor.shutdown(wait=True)
-            await self.session.close()
-            # await self.session.close()
-            # await self.session.close()
+            self.product_remaining -= 1
+            LOGGER.info(f'{self.product_remaining} of {self.product_total} complete')
+
+def replace_url_params(url, params):
+    # https://stackoverflow.com/questions/2506379/add-params-to-given-url-in-python
+    assert isinstance(params, dict)
+    return url._replace(query=urllib.parse.urlencode(params))
+
+class CSVScribe:
+    def __init__(self, filename, fields):
+        self.filename = filename
+        self.dict_writer_parameters = {'fieldnames': fields, 'delimiter': ',', 'quotechar': '"', 'quoting': csv.QUOTE_MINIMAL, 'lineterminator': os.linesep}
+        with open(self.filename, 'w', newline='') as file:
+            csvwriter = csv.DictWriter(file, **self.dict_writer_parameters)
+            csvwriter.writeheader()
+
+    def __call__(self, row):
+        try:
+            with open(self.filename, 'a', newline='') as file:
+                csvwriter = csv.DictWriter(file, **self.dict_writer_parameters)
+                csvwriter.writerow(row)
+        except ValueError as e:
+            LOGGER.warning(e)
+
+if __name__ == '__main__':
+    config_logging(level=logging.INFO)
+    start_time = time.time()
+    try:
+        urls = []
+        crawler = Crawler(urls, 'crawling_log.log')
+        asyncio.run(crawler.crawl(), debug=True)
+    finally:
+        stop_time = time.time()
+        duration = stop_time - start_time
+        LOGGER.info(f'Finished in {duration:.3} seconds')
