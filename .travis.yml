@@ -9,17 +9,17 @@ before_install:
 # Could not get gitbash to update env variables. Hard coding python path
 env: PATH=/c/Python38:/c/Python38/Scripts:$PATH
 install:
-  # - pip install -r requirements.txt
-  - pip install lxml
-  - pip freeze
+  - pip install -r requirements.txt
+  # - pip install lxml
+  # - pip freeze
 script:
   - bash -c echo "Hello World"
-  - bash -c env
+  # - bash -c env
   - bash -c "where python"
   - bash -c "where pip"
   
-# before_deploy:
-#   - pyinstaller "showme.spec"
+before_deploy:
+  - pyinstaller "showme.spec"
 # deploy:
 #   provider: releases
 #   api_key: $RELEASE_TOKEN
