@@ -11,6 +11,7 @@ env: PATH=/c/Python38:/c/Python38/Scripts:$PATH
 install:
   # - pip install -r requirements.txt
   - pip install lxml
+  - pip freeze
 script:
   - bash -c echo "Hello World"
   - bash -c env
