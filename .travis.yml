@@ -3,18 +3,16 @@ os: windows
 language: shell
 before_install:
   - choco install python --version=3.8
-  # - python -m pip install --upgrade pip
-# env: PATH=/c/Python38:/c/Python37/Scripts:$PATH
-# install:
-#   - pip install -r requirements.txt
+  - python -m pip install --upgrade pip
+# Could not get gitbash to update env variables. Hard coding python path
+env: PATH=/c/Python38:/c/Python38/Scripts:$PATH
+install:
+  - pip install -r requirements.txt
 script:
+  - bash -c echo "Hello World"
   - bash -c env
-  - bash -c "ls /c/"
   - bash -c "where python"
-  - bash -c "ls $(where python)"
-  - bash -c "echo $PATH"
-  - powershell refreshenv
-  - bash -c "echo $PATH"
+  - bash -c "where pip"
   
 # before_deploy:
 #   - pyinstaller "showme.spec"
