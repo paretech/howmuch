@@ -5,7 +5,6 @@ import pathlib
 import os
 import sys
 
-import showme.crawling as crawling
 import showme.reporting as reporting
 
 LOGGER = logging.getLogger(__name__)
@@ -23,10 +22,10 @@ def config_logging(level):
 def _command_line_parser():
     """Command line parser and argument definition"""
     parser = argparse.ArgumentParser(description="Quickly get product properties")
-    parser.add_argument('categories', type=str, nargs='*',
+    parser.add_argument('categories', type=str, nargs='+',
                         help='the category to query (e.g. "men|clearance")')
-    parser.add_argument('-d', '--domain', help='Domain of website', required=True,
-                        default=os.getenv('SHOWME_DOMAIN'), type=str)
+    # parser.add_argument('-d', '--domain', help='Domain of website', required=True,
+    #                     default=os.getenv('SHOWME_DOMAIN'), type=str)
     parser.add_argument('-o', '--outfile', type=str, nargs='?', default=None, required=False,
                         help='CSV output file')
     parser.add_argument('-v', '--verbose', action='count', dest='level', default=0,
@@ -46,33 +45,35 @@ def _command_line():
     log_level = log_levels[min(args.level, len(log_levels) - 1)]
     config_logging(level=log_level)
 
-    if not args.categories:
-        print('No categories specified.')
-        print('Use --help for command line help')
-        return
+    # if not args.categories:
+    #     print('No categories specified.')
+    #     print('Use --help for command line help')
+    #     return
 
-    if not args.domain:
-        print('No domain specified.')
-        print('Use --help for command line help')
-        return
+    # if not args.domain:
+    #     print('No domain specified.')
+    #     print('Use --help for command line help')
+    #     return
 
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
 
     import signal
 
-    crawler = crawling.Crawler(args.categories, domain=args.domain, outfile=args.outfile)
+    crawler = crawling.Crawler(args.categories, outfile=args.outfile)
 
     # Python 3.7 on Windows does not support signals, supposedly 3.8 will.
     try:
-        loop.run_until_complete(crawler.crawl())
+        loop.run_until_complete(crawler.run())
     except KeyboardInterrupt:
         sys.stderr.flush()
         print('\nProcess Interrupted\n')
         LOGGER.info('Process interrupted')
     finally:
         LOGGER.info("That's All Folks!")
-        reporting.report(crawler)
+        # Sleep for aiohttp workaround https://github.com/aio-libs/aiohttp/issues/1925
+        loop.run_until_complete(asyncio.sleep(0.250))
+        # reporting.report(crawler)
         # loop.stop()
         loop.close()
 

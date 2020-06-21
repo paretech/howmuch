@@ -1,6 +1,10 @@
+import collections
 import logging
-
+import pathlib
+import os
+import requests
 import bs4
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -65,6 +69,9 @@ def get_style_links(items, key='pListItem'):
     """Given an iterable of mapping type, return links by key."""
     return [bs4.BeautifulSoup(item[key], 'lxml').a.get('href') for item in items if key in item.keys()]
 
+def get_page_category_code(resp, id='pageCategoryCode'):
+    '''Get '''
+    return bs4.BeautifulSoup(resp, 'lxml').find(id=id)['value']
 
 def category_url(category, domain, protocol='https'):
     """Category is the breadcrumb of a product list or grid view."""
