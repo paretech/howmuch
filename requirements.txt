@@ -2,9 +2,10 @@
 #  See https://pip.pypa.io/en/stable/reference/pip_install/#requirements-file-format
 #  See https://pip.pypa.io/en/stable/user_guide/#requirements-files
 aiohttp
+asyncio_throttle
 lxml
 beautifulsoup4
 PyInstaller
 
 ###### Requirements with Version Specifiers ######
-#   See https://www.python.org/dev/peps/pep-0440/#version-specifiers
+#  See https://www.python.org/dev/peps/pep-0440/#version-specifiers

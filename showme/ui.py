@@ -23,7 +23,7 @@ class Application(tk.Frame):
         self.master.minsize(500,75)
         self.master.columnconfigure(0, weight=1, minsize=500)
         self.master.rowconfigure(0, weight=1, minsize=50)
-        self.master.title(f'Showme - a web crawler (v{self.version})')
+        self.master.title(f'Showme - a web crawler ({self.version})')
 
         self.lfrm = tk.LabelFrame(
             text='Crawl category URL',

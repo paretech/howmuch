@@ -1,11 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
-from pathlib import Path
-p = Path('.\showme')
 
-a = Analysis(['showme\\ui.py'],
-             pathex=['.\\'],
+a = Analysis(['.\\showme\\ui.py'],
+             pathex=['.\\showme'],
              binaries=[],
              datas=[],
              hiddenimports=[],
