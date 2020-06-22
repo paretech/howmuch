@@ -2,7 +2,6 @@ import collections
 import logging
 import pathlib
 import os
-import requests
 import bs4
 
 
@@ -21,27 +20,6 @@ def get_product_details(product_page, product_url):
         LOGGER.warning(f'No results found, {product_url}')
 
     return swatch_data
-
-
-def get_styles(domain, category):
-    """Get list of products given domain and category"""
-    req_parameters = {'page': 0, 'q': ':relevance'}
-    req = requests.get(category_url(category, domain), req_parameters)
-    req.raise_for_status()
-
-    total_pages = int(req.json()['pagination']['numberOfPages'])
-    styles = req.json()['products']
-
-    for page in range(1, total_pages):
-        req_parameters['page'] = page
-        req = requests.get(category_url(category, domain), req_parameters)
-        req.raise_for_status()
-        LOGGER.info(req.json()['pagination'])
-
-        styles.extend(req.json()['products'])
-
-    LOGGER.info(count_keys(styles))
-    return styles
 
 
 def pdp_swatch_sets(soup, *args):
@@ -98,13 +76,6 @@ def count_keys(items):
 
 def remove_whitespace(string):
     return ' '.join(string.split())
-
-
-def save_page(address):
-    req = requests.get(address)
-    file_name = address.split('/')[-1] + '.html'
-    with open(file_name, 'w') as f:
-        f.write(str(req.content))
 
 
 def touch_file(file):
