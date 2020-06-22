@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+# https://pyinstaller.readthedocs.io/en/stable/spec-files.html
 
 block_cipher = None
 
@@ -29,4 +30,4 @@ exe = EXE(pyz,
           upx=True,
           upx_exclude=[],
           runtime_tmpdir=None,
-          console=False )
+          console=True)
