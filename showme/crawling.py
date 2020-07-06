@@ -6,7 +6,6 @@ import os
 import sys
 import time
 import random
-from pprint import pprint
 import aiohttp
 import urllib.parse
 import showme.scraping
@@ -49,15 +48,13 @@ class Job:
 
     @property
     def url(self):
-        # return self._url.geturl()
-        # return urllib.parse.quote(self._url.geturl(), safe='/:*?=')
         return self._url.geturl()
 
     async def go(self):
         await self.callback(self)
 
 class Crawler:
-    def __init__(self, urls, outfile):  
+    def __init__(self, urls, outfile='test.csv'):  
         self.urls = urls 
         self.max_workers = 2
         self.request_queue_depth = 20
@@ -181,7 +178,6 @@ class Crawler:
         
         last_page = int(job.content['pagination']['numberOfPages'])
         if current_page == 0:
-            # breakpoint()
             self.product_total += int(job.content['pagination']['totalNumberOfResults'])
             self.product_remaining += int(job.content['pagination']['totalNumberOfResults'])
 
@@ -197,7 +193,7 @@ class Crawler:
         products = showme.scraping.get_style_links(job.content['products'])
         product_details = [self.ProductURLDetails(*product.split('/')) for product in products]
         for item in product_details:
-            style, color = item.code.split('-')
+            style, color = item.code.split('-', maxsplit=1)
             if style in self.seen_styles:
                 LOGGER.debug(f'Skipping stage 3 request for {item.code}, already requested style.')
                 continue
@@ -233,13 +229,17 @@ class Crawler:
                 
                 try:
                     for size in product_summary['sizes']:
-                        size['style'], size['color'], _ = size['productSKUCode'].split('-')
+                        size['style'], size['color'] = size['productSKUCode'].rsplit('-', maxsplit=1)
                         self.csvwriter({**output, **size})
-                except KeyError:
+                except KeyError as e:
                     LOGGER.warning(f'No Size information: {product_url}')
+                    LOGGER.exception(e)
                     output['productSKUCode'] = product_summary.get('productSKUCode')
                     output['style'], output['color'], _ = output['productSKUCode'].split('-')
                     self.csvwriter(output)
+                except ValueError as e:
+                    LOGGER.warning(f'Unknown SKU Format: {size["productSKUCode"]}, {product_url}, {product_detail_url}')
+                    LOGGER.exception(e)
         finally:
             self.product_remaining -= 1
             LOGGER.info(f'{self.product_remaining} of {self.product_total} complete')
@@ -268,9 +268,10 @@ class CSVScribe:
 if __name__ == '__main__':
     config_logging(level=logging.INFO)
     start_time = time.time()
+    timestamp = str(datetime.datetime.fromtimestamp(start_time).strftime("%Y-%m-%d_%H%M%S"))
     try:
         urls = []
-        crawler = Crawler(urls, 'crawling_log.log')
+        crawler = Crawler(urls, timestamp+'.csv')
         asyncio.run(crawler.crawl(), debug=True)
     finally:
         stop_time = time.time()
